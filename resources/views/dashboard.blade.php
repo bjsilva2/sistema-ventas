@@ -108,25 +108,25 @@
                         </a>
 
                         <!-- PROVEEDORES -->
-                        <a href="#"
+                        <a href="{{ route('proveedores.index') }}"
                            class="p-5 bg-purple-100 hover:bg-purple-200 rounded-lg text-center font-semibold">
                             Proveedores
                         </a>
 
                         <!-- COMPRAS -->
-                        <a href="#"
+                        <a href="{{ route('compras.index') }}"
                            class="p-5 bg-orange-100 hover:bg-orange-200 rounded-lg text-center font-semibold">
                             Compras
                         </a>
 
                         <!-- VENTAS -->
-                        <a href="#"
+                        <a href="{{ route('ventas.index') }}"
                            class="p-5 bg-red-100 hover:bg-red-200 rounded-lg text-center font-semibold">
                             Ventas
                         </a>
 
                         <!-- INVENTARIO -->
-                        <a href="#"
+                        <a href="{{ route('inventario.index') }}"
                            class="p-5 bg-indigo-100 hover:bg-indigo-200 rounded-lg text-center font-semibold">
                             Inventario
                         </a>
@@ -136,6 +136,13 @@
                            class="p-5 bg-gray-100 hover:bg-gray-200 rounded-lg text-center font-semibold">
                             Reportes
                         </a>
+                        
+                        <!-- CAJA -->
+                        <a href="{{ route('caja.index') }}"
+                           class="p-5 bg-teal-100 hover:bg-teal-200 rounded-lg text-center font-semibold">
+                            Caja
+                        </a>
+
 
                     </div>
 
