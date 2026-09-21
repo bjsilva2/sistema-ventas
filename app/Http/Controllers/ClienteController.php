@@ -7,11 +7,25 @@ use Illuminate\Http\Request;
 
 class ClienteController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $clientes = Cliente::orderBy('id', 'desc')->get();
+        $buscar = $request->buscar;
 
-        return view('clientes.index', compact('clientes'));
+        $clientes = Cliente::when($buscar, function ($query, $buscar) {
+            $query->where(function ($q) use ($buscar) {
+                $q->where('nombre', 'ilike', "%{$buscar}%")
+                  ->orWhere('nit', 'ilike', "%{$buscar}%")
+                  ->orWhere('telefono', 'ilike', "%{$buscar}%")
+                  ->orWhere('correo', 'ilike', "%{$buscar}%");
+            });
+        })
+        ->orderBy('id', 'desc')
+        ->paginate(10)
+        ->withQueryString();
+        return view('clientes.index', compact(
+            'clientes',
+            'buscar'
+        ));
     }
 
     public function store(Request $request)

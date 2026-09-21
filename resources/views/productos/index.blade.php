@@ -228,6 +228,48 @@
                 <h3 class="text-lg font-bold mb-4">
                     Productos registrados
                 </h3>
+                <form method="GET" action="{{ route('productos.index') }}" class="mb-4">
+                    <div class="flex gap-2">
+                        <input
+                            type="text"
+                            name="buscar"
+                            value="{{ request('buscar') }}"
+                            placeholder="Buscar por código, nombre o descripción..."
+                            class="w-full border-gray-300 rounded-lg"
+                        >
+
+                        <button
+                            type="submit"
+                            style="
+                                background:#2563eb;
+                                color:white;
+                                padding:10px 20px;
+                                border-radius:8px;
+                                border:none;
+                                font-weight:600;
+                            "
+                        >
+                            Buscar
+                        </button>
+
+                        @if(request('buscar'))
+                            <a
+                                href="{{ route('productos.index') }}"
+                                style="
+                                    background:#6b7280;
+                                    color:white;
+                                    padding:10px 20px;
+                                    border-radius:8px;
+                                    text-decoration:none;
+                                "
+                            >
+                                Limpiar
+                            </a>
+                                @endif
+
+                    </div>
+
+                </form>
 
                 <div class="overflow-x-auto">
 
@@ -427,6 +469,10 @@
 
                     </table>
 
+                </div>
+
+                <div class="mt-6">
+                    {{ $productos->links() }}
                 </div>
 
             </div>

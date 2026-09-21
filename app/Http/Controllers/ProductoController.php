@@ -8,18 +8,32 @@ use Illuminate\Http\Request;
 
 class ProductoController extends Controller
 {
-    public function index()
-    {
+   public function index(Request $request)
+   {
+        $buscar = $request->buscar;
+
         $productos = Producto::with('categoria')
+            ->when($buscar, function ($query, $buscar) {
+                $query->where(function ($q) use ($buscar) {
+                    $q->where('codigo', 'ilike', "%{$buscar}%")
+                      ->orWhere('nombre', 'ilike', "%{$buscar}%")
+                      ->orWhere('descripcion', 'ilike', "%{$buscar}%");
+                });
+            })
             ->orderBy('id', 'desc')
-            ->get();
+            ->paginate(10)
+            ->withQueryString();
 
         $categorias = Categoria::where('estado', true)
             ->orderBy('nombre')
             ->get();
 
-        return view('productos.index', compact('productos', 'categorias'));
-    }
+        return view('productos.index', compact(
+            'productos',
+            'categorias',
+            'buscar'
+        ));
+}
 
     public function store(Request $request)
     {

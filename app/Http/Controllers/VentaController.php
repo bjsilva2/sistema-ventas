@@ -6,6 +6,8 @@ use App\Models\Venta;
 use App\Models\DetalleVenta;
 use App\Models\Producto;
 use App\Models\Cliente;
+use App\Models\Caja;
+use App\Models\MovimientoCaja;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -37,6 +39,7 @@ class VentaController extends Controller
         ));
     }
 
+
     public function store(Request $request)
     {
         $request->validate([
@@ -55,9 +58,38 @@ class VentaController extends Controller
                 'required|integer|min:1',
         ]);
 
+
         DB::beginTransaction();
 
         try {
+
+            /*
+            |--------------------------------------------------------------------------
+            | VERIFICAR CAJA SI EL PAGO ES EN EFECTIVO
+            |--------------------------------------------------------------------------
+            */
+
+            $caja = null;
+
+            if ($request->metodo_pago === 'Efectivo') {
+
+                $caja = Caja::where('usuario_id', auth()->id())
+                    ->where('estado', 'ABIERTA')
+                    ->first();
+
+                if (!$caja) {
+                    throw new \Exception(
+                        'Debes abrir una caja antes de registrar una venta en efectivo.'
+                    );
+                }
+            }
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | CREAR VENTA
+            |--------------------------------------------------------------------------
+            */
 
             $venta = Venta::create([
                 'cliente_id' => $request->cliente_id,
@@ -70,7 +102,15 @@ class VentaController extends Controller
                 'estado' => true,
             ]);
 
+
             $totalVenta = 0;
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | REGISTRAR PRODUCTOS
+            |--------------------------------------------------------------------------
+            */
 
             foreach ($request->productos as $item) {
 
@@ -78,6 +118,13 @@ class VentaController extends Controller
                     ->findOrFail($item['producto_id']);
 
                 $cantidad = (int) $item['cantidad'];
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | VERIFICAR STOCK
+                |--------------------------------------------------------------------------
+                */
 
                 if ($producto->stock < $cantidad) {
 
@@ -89,9 +136,19 @@ class VentaController extends Controller
                     );
                 }
 
-                $precioVenta = (float) $producto->precio_venta;
 
-                $subtotal = $cantidad * $precioVenta;
+                $precioVenta =
+                    (float) $producto->precio_venta;
+
+                $subtotal =
+                    $cantidad * $precioVenta;
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | GUARDAR DETALLE
+                |--------------------------------------------------------------------------
+                */
 
                 DetalleVenta::create([
                     'venta_id' => $venta->id,
@@ -101,20 +158,54 @@ class VentaController extends Controller
                     'subtotal' => $subtotal,
                 ]);
 
-                // DESCONTAR STOCK
+
+                /*
+                |--------------------------------------------------------------------------
+                | DESCONTAR STOCK
+                |--------------------------------------------------------------------------
+                */
+
                 $producto->decrement(
                     'stock',
                     $cantidad
                 );
 
+
                 $totalVenta += $subtotal;
             }
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | ACTUALIZAR TOTAL DE VENTA
+            |--------------------------------------------------------------------------
+            */
 
             $venta->update([
                 'total' => $totalVenta
             ]);
 
+
+            /*
+            |--------------------------------------------------------------------------
+            | REGISTRAR INGRESO AUTOMÁTICO EN CAJA
+            |--------------------------------------------------------------------------
+            */
+
+            if ($request->metodo_pago === 'Efectivo' && $caja) {
+
+                MovimientoCaja::create([
+                    'caja_id' => $caja->id,
+                    'tipo' => 'INGRESO',
+                    'concepto' => 'Venta N.º ' . $venta->id,
+                    'monto' => $totalVenta,
+                    'fecha' => now(),
+                ]);
+            }
+
+
             DB::commit();
+
 
             return redirect()
                 ->route('ventas.index')
@@ -122,6 +213,7 @@ class VentaController extends Controller
                     'success',
                     'Venta registrada correctamente.'
                 );
+
 
         } catch (\Throwable $e) {
 
