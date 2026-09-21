@@ -299,6 +299,94 @@
                     Ventas registradas
                 </h3>
 
+                <form method="GET" action="{{ route('ventas.index') }}" class="mb-5">
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+
+                        <div>
+                            <label class="block mb-1 font-semibold">Buscar</label>
+                            <input
+                                type="text"
+                                name="buscar"
+                                value="{{ request('buscar') }}"
+                                placeholder="Cliente o comprobante..."
+                                class="w-full border-gray-300 rounded-lg"
+                            >
+                        </div>
+
+                        <div>
+                            <label class="block mb-1 font-semibold">Desde</label>
+                            <input
+                                type="date"
+                                name="fecha_inicio"
+                                value="{{ request('fecha_inicio') }}"
+                                class="w-full border-gray-300 rounded-lg"
+                            >
+                        </div>
+
+                        <div>
+                            <label class="block mb-1 font-semibold">Hasta</label>
+                            <input
+                                type="date"
+                                name="fecha_fin"
+                                value="{{ request('fecha_fin') }}"
+                                class="w-full border-gray-300 rounded-lg"
+                            >
+                        </div>
+
+                        <div>
+                            <label class="block mb-1 font-semibold">Método de pago</label>
+                            <select
+                                name="metodo_pago"
+                                class="w-full border-gray-300 rounded-lg"
+                            >
+                                <option value="">Todos</option>
+                                <option value="Efectivo" {{ request('metodo_pago') === 'Efectivo' ? 'selected' : '' }}>
+                                    Efectivo
+                                </option>
+                                <option value="QR" {{ request('metodo_pago') === 'QR' ? 'selected' : '' }}>
+                                    QR
+                                </option>
+                                <option value="Tarjeta" {{ request('metodo_pago') === 'Tarjeta' ? 'selected' : '' }}>
+                                    Tarjeta
+                                </option>
+                            </select>
+                        </div>
+
+                        <div class="flex items-end gap-2">
+                            <button
+                                type="submit"
+                                style="
+                                    background:#2563eb;
+                                    color:white;
+                                    padding:10px 18px;
+                                    border-radius:8px;
+                                    border:none;
+                                    font-weight:600;
+                                    cursor:pointer;
+                                "
+                            >
+                                Filtrar
+                            </button>
+
+                            @if(request('buscar') || request('fecha_inicio') || request('fecha_fin') || request('metodo_pago'))
+                                <a
+                                    href="{{ route('ventas.index') }}"
+                                    style="
+                                        background:#6b7280;
+                                        color:white;
+                                        padding:10px 18px;
+                                        border-radius:8px;
+                                        text-decoration:none;
+                                    "
+                                >
+                                    Limpiar
+                                </a>
+                            @endif
+                        </div>
+
+                    </div>
+                </form>
+
                 <div class="overflow-x-auto">
 
                     <table class="w-full border-collapse">
@@ -313,6 +401,7 @@
                                 <th class="border p-3">Comprobante</th>
                                 <th class="border p-3">Usuario</th>
                                 <th class="border p-3">Total</th>
+                                <th class="border p-3">Acciones</th>
                             </tr>
 
                         </thead>
@@ -351,6 +440,24 @@
                                         Bs {{ number_format($venta->total, 2) }}
                                     </td>
 
+                                    <td class="border p-3 text-center">
+                                        <button
+                                            type="button"
+                                            onclick='abrirDetalleVenta(@json($venta))'
+                                            style="
+                                                background:#0f766e;
+                                                color:white;
+                                                padding:8px 14px;
+                                                border-radius:8px;
+                                                border:none;
+                                                font-weight:600;
+                                                cursor:pointer;
+                                            "
+                                        >
+                                            Ver detalle
+                                        </button>
+                                    </td>
+
                                 </tr>
 
                             @empty
@@ -358,7 +465,7 @@
                                 <tr>
 
                                     <td
-                                        colspan="7"
+                                        colspan="8"
                                         class="border p-5 text-center text-gray-500"
                                     >
                                         No hay ventas registradas.
@@ -374,13 +481,167 @@
 
                 </div>
 
+                <div class="mt-6">
+                    {{ $ventas->links() }}
+                </div>
+
             </div>
 
         </div>
     </div>
 
 
+    {{-- MODAL DETALLE DE VENTA --}}
+    <div
+        id="modalDetalleVenta"
+        style="
+            display:none;
+            position:fixed;
+            inset:0;
+            background:rgba(0,0,0,0.5);
+            align-items:center;
+            justify-content:center;
+            z-index:9999;
+            padding:20px;
+        "
+    >
+        <div
+            style="
+                background:white;
+                width:100%;
+                max-width:900px;
+                max-height:90vh;
+                overflow-y:auto;
+                padding:24px;
+                border-radius:12px;
+            "
+        >
+            <div class="flex justify-between items-center mb-5">
+                <h3 class="text-xl font-bold">
+                    Detalle de Venta
+                </h3>
+
+                <button
+                    type="button"
+                    onclick="cerrarDetalleVenta()"
+                    style="
+                        background:#6b7280;
+                        color:white;
+                        padding:8px 14px;
+                        border-radius:8px;
+                        border:none;
+                        cursor:pointer;
+                    "
+                >
+                    Cerrar
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+                <p><strong>Venta N.º:</strong> <span id="detalleVentaId"></span></p>
+                <p><strong>Fecha:</strong> <span id="detalleVentaFecha"></span></p>
+                <p><strong>Cliente:</strong> <span id="detalleVentaCliente"></span></p>
+                <p><strong>Método de pago:</strong> <span id="detalleVentaPago"></span></p>
+                <p><strong>Comprobante:</strong> <span id="detalleVentaComprobante"></span></p>
+                <p><strong>Número:</strong> <span id="detalleVentaNumero"></span></p>
+                <p><strong>Usuario:</strong> <span id="detalleVentaUsuario"></span></p>
+                <p><strong>Total:</strong> Bs <span id="detalleVentaTotal"></span></p>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse">
+                    <thead>
+                        <tr class="bg-gray-100">
+                            <th class="border p-3">Producto</th>
+                            <th class="border p-3">Cantidad</th>
+                            <th class="border p-3">Precio</th>
+                            <th class="border p-3">Subtotal</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="detalleVentaProductos"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+
     <script>
+
+        function abrirDetalleVenta(venta)
+        {
+            document.getElementById('detalleVentaId').textContent =
+                venta.id ?? '-';
+
+            document.getElementById('detalleVentaFecha').textContent =
+                venta.fecha ?? '-';
+
+            document.getElementById('detalleVentaCliente').textContent =
+                venta.cliente?.nombre ?? 'Consumidor final';
+
+            document.getElementById('detalleVentaPago').textContent =
+                venta.metodo_pago ?? '-';
+
+            document.getElementById('detalleVentaComprobante').textContent =
+                venta.tipo_comprobante ?? '-';
+
+            document.getElementById('detalleVentaNumero').textContent =
+                venta.numero_comprobante ?? '-';
+
+            document.getElementById('detalleVentaUsuario').textContent =
+                venta.usuario?.name ?? '-';
+
+            document.getElementById('detalleVentaTotal').textContent =
+                Number(venta.total ?? 0).toFixed(2);
+
+            const tbody =
+                document.getElementById('detalleVentaProductos');
+
+            tbody.innerHTML = '';
+
+            if (!venta.detalles || venta.detalles.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="border p-4 text-center text-gray-500">
+                            No hay detalle disponible.
+                        </td>
+                    </tr>
+                `;
+            } else {
+                venta.detalles.forEach(detalle => {
+                    const nombre =
+                        detalle.producto?.nombre ?? 'Producto';
+
+                    const cantidad =
+                        Number(detalle.cantidad ?? 0);
+
+                    const precio =
+                        Number(detalle.precio_venta ?? 0);
+
+                    const subtotal =
+                        Number(detalle.subtotal ?? (cantidad * precio));
+
+                    tbody.innerHTML += `
+                        <tr>
+                            <td class="border p-3">${nombre}</td>
+                            <td class="border p-3 text-center">${cantidad}</td>
+                            <td class="border p-3 text-right">Bs ${precio.toFixed(2)}</td>
+                            <td class="border p-3 text-right">Bs ${subtotal.toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+            }
+
+            document.getElementById('modalDetalleVenta').style.display =
+                'flex';
+        }
+
+        function cerrarDetalleVenta()
+        {
+            document.getElementById('modalDetalleVenta').style.display =
+                'none';
+        }
+
 
         let productosVenta = [];
         let indice = 0;

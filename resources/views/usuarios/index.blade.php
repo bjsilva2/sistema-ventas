@@ -380,6 +380,44 @@
 
                 </div>
 
+
+                <div class="mb-4">
+
+                    <label class="block mb-1 font-semibold">
+                        Nueva contraseña
+                    </label>
+
+                    <input
+                        type="password"
+                        id="editarPassword"
+                        name="password"
+                        class="w-full border-gray-300 rounded-lg"
+                        placeholder="Dejar vacío para mantener la actual"
+                    >
+
+                    <p class="text-sm text-gray-500 mt-1">
+                        Mínimo 8 caracteres. Si no deseas cambiarla, deja este campo vacío.
+                    </p>
+
+                </div>
+
+
+                <div class="mb-4">
+
+                    <label class="block mb-1 font-semibold">
+                        Confirmar nueva contraseña
+                    </label>
+
+                    <input
+                        type="password"
+                        id="editarPasswordConfirmation"
+                        name="password_confirmation"
+                        class="w-full border-gray-300 rounded-lg"
+                        placeholder="Repite la nueva contraseña"
+                    >
+
+                </div>
+
                 <div class="flex justify-end gap-2 mt-5">
 
                     <button
@@ -432,6 +470,9 @@
 
             document.getElementById('editarRol').value =
                 usuario.rol ?? 'Vendedor';
+
+            document.getElementById('editarPassword').value = '';
+            document.getElementById('editarPasswordConfirmation').value = '';
 
             document.getElementById('formEditarUsuario').action =
                 '/usuarios/' + usuario.id;

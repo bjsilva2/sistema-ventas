@@ -7,11 +7,26 @@ use Illuminate\Http\Request;
 
 class ProveedorController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $proveedores = Proveedor::orderBy('id', 'desc')->get();
+        $buscar = $request->buscar;
 
-        return view('proveedores.index', compact('proveedores'));
+        $proveedores = Proveedor::when($buscar, function ($query, $buscar) {
+            $query->where(function ($q) use ($buscar) {
+                $q->where('nombre', 'ilike', "%{$buscar}%")
+                  ->orWhere('nit', 'ilike', "%{$buscar}%")
+                  ->orWhere('telefono', 'ilike', "%{$buscar}%")
+                  ->orWhere('correo', 'ilike', "%{$buscar}%");
+            });
+        })
+        ->orderBy('id', 'desc')
+        ->paginate(10)
+        ->withQueryString();
+
+        return view('proveedores.index', compact(
+            'proveedores',
+            'buscar'
+        ));
     }
 
     public function store(Request $request)

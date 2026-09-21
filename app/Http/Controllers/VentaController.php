@@ -13,15 +13,71 @@ use Illuminate\Support\Facades\DB;
 
 class VentaController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        $buscar = $request->buscar;
+        $fechaInicio = $request->fecha_inicio;
+        $fechaFin = $request->fecha_fin;
+        $metodoPago = $request->metodo_pago;
+
         $ventas = Venta::with([
-            'cliente',
-            'usuario',
-            'detalles.producto'
-        ])
-        ->orderBy('id', 'desc')
-        ->get();
+                'cliente',
+                'usuario',
+                'detalles.producto'
+            ])
+            ->when($buscar, function ($query, $buscar) {
+
+                $query->where(function ($q) use ($buscar) {
+
+                    $q->where(
+                        'numero_comprobante',
+                        'ilike',
+                        "%{$buscar}%"
+                    )
+                    ->orWhereHas(
+                        'cliente',
+                        function ($clienteQuery) use ($buscar) {
+
+                            $clienteQuery->where(
+                                'nombre',
+                                'ilike',
+                                "%{$buscar}%"
+                            );
+                        }
+                    );
+
+                });
+
+            })
+            ->when($fechaInicio, function ($query, $fechaInicio) {
+
+                $query->whereDate(
+                    'fecha',
+                    '>=',
+                    $fechaInicio
+                );
+
+            })
+            ->when($fechaFin, function ($query, $fechaFin) {
+
+                $query->whereDate(
+                    'fecha',
+                    '<=',
+                    $fechaFin
+                );
+
+            })
+            ->when($metodoPago, function ($query, $metodoPago) {
+
+                $query->where(
+                    'metodo_pago',
+                    $metodoPago
+                );
+
+            })
+            ->orderBy('id', 'desc')
+            ->paginate(10)
+            ->withQueryString();
 
         $clientes = Cliente::where('estado', true)
             ->orderBy('nombre')
@@ -35,10 +91,13 @@ class VentaController extends Controller
         return view('ventas.index', compact(
             'ventas',
             'clientes',
-            'productos'
+            'productos',
+            'buscar',
+            'fechaInicio',
+            'fechaFin',
+            'metodoPago'
         ));
     }
-
 
     public function store(Request $request)
     {

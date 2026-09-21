@@ -16,12 +16,18 @@ class UsuarioController extends Controller
         return view('usuarios.index', compact('usuarios'));
     }
 
+
     public function store(Request $request)
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|max:255|unique:users,email',
-            'password' => 'required|string|min:8|confirmed',
+
+            'email' =>
+                'required|email|max:255|unique:users,email',
+
+            'password' =>
+                'required|string|min:8|confirmed',
+
             'rol' => [
                 'required',
                 Rule::in([
@@ -32,46 +38,115 @@ class UsuarioController extends Controller
             ],
         ]);
 
+
         User::create([
             'name' => $request->name,
+
             'email' => $request->email,
-            'password' => Hash::make($request->password),
+
+            'password' =>
+                Hash::make($request->password),
+
             'rol' => $request->rol,
         ]);
 
+
         return redirect()
             ->route('usuarios.index')
-            ->with('success', 'Usuario creado correctamente.');
+            ->with(
+                'success',
+                'Usuario creado correctamente.'
+            );
     }
+
 
     public function update(Request $request, User $usuario)
     {
         $request->validate([
-            'name' => 'required|string|max:255',
+            'name' =>
+                'required|string|max:255',
+
             'email' => [
                 'required',
                 'email',
                 'max:255',
-                Rule::unique('users', 'email')->ignore($usuario->id),
+
+                Rule::unique(
+                    'users',
+                    'email'
+                )->ignore($usuario->id),
             ],
+
             'rol' => [
                 'required',
+
                 Rule::in([
                     'Administrador',
                     'Vendedor',
                     'Almacen',
                 ]),
             ],
+
+            'password' =>
+                'nullable|string|min:8|confirmed',
         ]);
 
-        $usuario->update([
-            'name' => $request->name,
-            'email' => $request->email,
-            'rol' => $request->rol,
-        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | EVITAR QUE EL USUARIO ACTUAL SE QUITE SU PROPIO ROL DE ADMINISTRADOR
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            $usuario->id === auth()->id()
+            &&
+            $usuario->rol === 'Administrador'
+            &&
+            $request->rol !== 'Administrador'
+        ) {
+            return back()->withErrors([
+                'rol' =>
+                    'No puedes quitarte tu propio rol de Administrador.'
+            ]);
+        }
+
+
+        $datos = [
+            'name' =>
+                $request->name,
+
+            'email' =>
+                $request->email,
+
+            'rol' =>
+                $request->rol,
+        ];
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | CAMBIAR CONTRASEÑA SOLO SI SE ESCRIBIÓ UNA NUEVA
+        |--------------------------------------------------------------------------
+        */
+
+        if ($request->filled('password')) {
+
+            $datos['password'] =
+                Hash::make(
+                    $request->password
+                );
+        }
+
+
+        $usuario->update($datos);
+
 
         return redirect()
             ->route('usuarios.index')
-            ->with('success', 'Usuario actualizado correctamente.');
+            ->with(
+                'success',
+                'Usuario actualizado correctamente.'
+            );
     }
 }
