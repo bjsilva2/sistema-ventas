@@ -14,6 +14,7 @@ use App\Http\Controllers\InventarioController;
 use App\Http\Controllers\CajaController;
 use App\Http\Controllers\ReporteController;
 use App\Http\Controllers\UsuarioController;
+use App\Http\Controllers\PresentacionProductoController;
 
 
 /*
@@ -95,6 +96,18 @@ Route::middleware([
 
     Route::delete('/productos/{producto}', [ProductoController::class, 'destroy'])
         ->name('productos.destroy');
+
+
+    // PRESENTACIONES DE PRODUCTOS
+    Route::post(
+        '/presentaciones',
+        [PresentacionProductoController::class, 'store']
+    )->name('presentaciones.store');
+
+    Route::put(
+        '/presentaciones/{presentacion}/estado',
+        [PresentacionProductoController::class, 'destroy']
+    )->name('presentaciones.estado');
 
 
     // PROVEEDORES
@@ -186,7 +199,7 @@ Route::middleware([
 
     // REPORTES
     Route::get('/reportes', [ReporteController::class, 'index'])
-         ->name('reportes.index');
+        ->name('reportes.index');
 
     // USUARIOS
     Route::get('/usuarios', [UsuarioController::class, 'index'])

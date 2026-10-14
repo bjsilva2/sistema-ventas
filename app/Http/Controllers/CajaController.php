@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Caja;
 use App\Models\MovimientoCaja;
+use App\Models\Venta;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -13,40 +14,88 @@ class CajaController extends Controller
     {
         $cajaAbierta = Caja::where('usuario_id', auth()->id())
             ->where('estado', 'ABIERTA')
-            ->with('movimientos')
+            ->with(['movimientos', 'usuario'])
             ->latest('id')
             ->first();
 
-        $cajas = Caja::with('usuario')
+        $cajas = Caja::with(['usuario', 'movimientos'])
             ->orderBy('id', 'desc')
             ->get();
 
-        $ingresos = 0;
+        $ventasEfectivo = 0;
+        $ventasQr = 0;
         $egresos = 0;
-        $saldoActual = 0;
+        $totalVendidoCobrado = 0;
+        $efectivoEnCaja = 0;
+        $saldoQr = 0;
 
         if ($cajaAbierta) {
+            $fechaInicio = $cajaAbierta->fecha_apertura;
+            $fechaFin = now();
 
-            $ingresos = $cajaAbierta->movimientos()
-                ->where('tipo', 'INGRESO')
-                ->sum('monto');
+            $ventasEfectivo = Venta::where('usuario_id', $cajaAbierta->usuario_id)
+                ->where('metodo_pago', 'Efectivo')
+                ->whereBetween('created_at', [$fechaInicio, $fechaFin])
+                ->sum('total');
+
+            $ventasQr = Venta::where('usuario_id', $cajaAbierta->usuario_id)
+                ->where('metodo_pago', 'QR')
+                ->whereBetween('created_at', [$fechaInicio, $fechaFin])
+                ->sum('total');
 
             $egresos = $cajaAbierta->movimientos()
                 ->where('tipo', 'EGRESO')
                 ->sum('monto');
 
-            $saldoActual =
+            $totalVendidoCobrado = $ventasEfectivo + $ventasQr;
+
+            $efectivoEnCaja =
                 $cajaAbierta->monto_inicial
-                + $ingresos
+                + $ventasEfectivo
                 - $egresos;
+
+            $saldoQr = $ventasQr;
+        }
+
+        foreach ($cajas as $caja) {
+            $fechaInicio = $caja->fecha_apertura;
+            $fechaFin = $caja->fecha_cierre ?? now();
+
+            $caja->ventas_efectivo = Venta::where('usuario_id', $caja->usuario_id)
+                ->where('metodo_pago', 'Efectivo')
+                ->whereBetween('created_at', [$fechaInicio, $fechaFin])
+                ->sum('total');
+
+            $caja->ventas_qr = Venta::where('usuario_id', $caja->usuario_id)
+                ->where('metodo_pago', 'QR')
+                ->whereBetween('created_at', [$fechaInicio, $fechaFin])
+                ->sum('total');
+
+            $caja->egresos_calculados = $caja->movimientos
+                ->where('tipo', 'EGRESO')
+                ->sum('monto');
+
+            $caja->total_vendido_cobrado =
+                $caja->ventas_efectivo
+                + $caja->ventas_qr;
+
+            $caja->efectivo_en_caja =
+                $caja->monto_inicial
+                + $caja->ventas_efectivo
+                - $caja->egresos_calculados;
+
+            $caja->saldo_qr = $caja->ventas_qr;
         }
 
         return view('caja.index', compact(
             'cajaAbierta',
             'cajas',
-            'ingresos',
+            'ventasEfectivo',
+            'ventasQr',
             'egresos',
-            'saldoActual'
+            'totalVendidoCobrado',
+            'efectivoEnCaja',
+            'saldoQr'
         ));
     }
 
@@ -122,10 +171,18 @@ class CajaController extends Controller
         }
 
         DB::transaction(function () use ($caja) {
+            $fechaInicio = $caja->fecha_apertura;
+            $fechaFin = now();
 
-            $ingresos = $caja->movimientos()
-                ->where('tipo', 'INGRESO')
-                ->sum('monto');
+            $ventasEfectivo = Venta::where('usuario_id', $caja->usuario_id)
+                ->where('metodo_pago', 'Efectivo')
+                ->whereBetween('created_at', [$fechaInicio, $fechaFin])
+                ->sum('total');
+
+            $ventasQr = Venta::where('usuario_id', $caja->usuario_id)
+                ->where('metodo_pago', 'QR')
+                ->whereBetween('created_at', [$fechaInicio, $fechaFin])
+                ->sum('total');
 
             $egresos = $caja->movimientos()
                 ->where('tipo', 'EGRESO')
@@ -133,11 +190,11 @@ class CajaController extends Controller
 
             $montoFinal =
                 $caja->monto_inicial
-                + $ingresos
+                + $ventasEfectivo
                 - $egresos;
 
             $caja->update([
-                'fecha_cierre' => now(),
+                'fecha_cierre' => $fechaFin,
                 'monto_final' => $montoFinal,
                 'estado' => 'CERRADA',
             ]);

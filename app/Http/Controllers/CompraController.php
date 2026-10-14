@@ -6,6 +6,7 @@ use App\Models\Compra;
 use App\Models\DetalleCompra;
 use App\Models\Producto;
 use App\Models\Proveedor;
+use App\Models\PresentacionProducto;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -20,7 +21,8 @@ class CompraController extends Controller
         $compras = Compra::with([
                 'proveedor',
                 'usuario',
-                'detalles.producto'
+                'detalles.producto',
+                'detalles.presentacion'
             ])
             ->when($buscar, function ($query, $buscar) {
 
@@ -74,7 +76,12 @@ class CompraController extends Controller
             ->get();
 
 
-        $productos = Producto::where('estado', true)
+        $productos = Producto::with([
+                'presentaciones' => function ($query) {
+                    $query->where('estado', true);
+                }
+            ])
+            ->where('estado', true)
             ->orderBy('nombre')
             ->get();
 
@@ -103,20 +110,23 @@ class CompraController extends Controller
             'fecha' =>
                 'required|date',
 
-            'numero_comprobante' =>
-                'nullable|string|max:255',
-
             'productos' =>
                 'required|array|min:1',
 
             'productos.*.producto_id' =>
                 'required|exists:productos,id',
 
-            'productos.*.cantidad' =>
+            'productos.*.presentacion_id' =>
+                'nullable|exists:presentaciones_producto,id',
+
+            'productos.*.cantidad_presentaciones' =>
                 'required|integer|min:1',
 
             'productos.*.precio_compra' =>
                 'required|numeric|min:0',
+
+            'productos.*.fecha_vencimiento' =>
+                'nullable|date',
 
         ]);
 
@@ -126,7 +136,31 @@ class CompraController extends Controller
 
         try {
 
-            // CREAR COMPRA
+            /*
+            |--------------------------------------------------------------------------
+            | GENERAR NÚMERO AUTOMÁTICO
+            |--------------------------------------------------------------------------
+            */
+
+            $ultimoId =
+                Compra::max('id') ?? 0;
+
+
+            $numeroComprobante =
+                'COM-' . str_pad(
+                    $ultimoId + 1,
+                    6,
+                    '0',
+                    STR_PAD_LEFT
+                );
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | CREAR COMPRA
+            |--------------------------------------------------------------------------
+            */
+
             $compra = Compra::create([
 
                 'proveedor_id' =>
@@ -139,7 +173,7 @@ class CompraController extends Controller
                     $request->fecha,
 
                 'numero_comprobante' =>
-                    $request->numero_comprobante,
+                    $numeroComprobante,
 
                 'total' =>
                     0,
@@ -153,28 +187,101 @@ class CompraController extends Controller
             $totalCompra = 0;
 
 
+            /*
+            |--------------------------------------------------------------------------
+            | REGISTRAR PRODUCTOS
+            |--------------------------------------------------------------------------
+            */
+
             foreach ($request->productos as $item) {
 
-                // BLOQUEA EL PRODUCTO DURANTE LA COMPRA
                 $producto = Producto::lockForUpdate()
                     ->findOrFail(
                         $item['producto_id']
                     );
 
 
-                $cantidad =
-                    (int) $item['cantidad'];
+                /*
+                |--------------------------------------------------------------------------
+                | PRESENTACIÓN
+                |--------------------------------------------------------------------------
+                */
 
+                $presentacion = null;
+
+                $unidadesPorPresentacion = 1;
+
+
+                if (!empty($item['presentacion_id'])) {
+
+                    $presentacion = PresentacionProducto::where(
+                            'producto_id',
+                            $producto->id
+                        )
+                        ->where(
+                            'id',
+                            $item['presentacion_id']
+                        )
+                        ->where(
+                            'estado',
+                            true
+                        )
+                        ->firstOrFail();
+
+
+                    $unidadesPorPresentacion =
+                        (int) $presentacion->cantidad_unidades;
+                }
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | CANTIDAD DE PAQUETES / PRESENTACIONES
+                |--------------------------------------------------------------------------
+                */
+
+                $cantidadPresentaciones =
+                    (int) $item['cantidad_presentaciones'];
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | CANTIDAD REAL DE UNIDADES
+                |--------------------------------------------------------------------------
+                */
+
+                $cantidadUnidades =
+                    $cantidadPresentaciones
+                    * $unidadesPorPresentacion;
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | PRECIO POR PRESENTACIÓN
+                |--------------------------------------------------------------------------
+                */
 
                 $precioCompra =
                     (float) $item['precio_compra'];
 
 
+                /*
+                |--------------------------------------------------------------------------
+                | SUBTOTAL
+                |--------------------------------------------------------------------------
+                */
+
                 $subtotal =
-                    $cantidad * $precioCompra;
+                    $cantidadPresentaciones
+                    * $precioCompra;
 
 
-                // CREAR DETALLE
+                /*
+                |--------------------------------------------------------------------------
+                | GUARDAR DETALLE
+                |--------------------------------------------------------------------------
+                */
+
                 DetalleCompra::create([
 
                     'compra_id' =>
@@ -183,8 +290,14 @@ class CompraController extends Controller
                     'producto_id' =>
                         $producto->id,
 
+                    'presentacion_id' =>
+                        $presentacion?->id,
+
+                    'cantidad_presentaciones' =>
+                        $cantidadPresentaciones,
+
                     'cantidad' =>
-                        $cantidad,
+                        $cantidadUnidades,
 
                     'precio_compra' =>
                         $precioCompra,
@@ -192,21 +305,40 @@ class CompraController extends Controller
                     'subtotal' =>
                         $subtotal,
 
+                    'fecha_vencimiento' =>
+                        $item['fecha_vencimiento'] ?? null,
+
                 ]);
 
 
-                // AUMENTAR STOCK
+                /*
+                |--------------------------------------------------------------------------
+                | AUMENTAR STOCK EN UNIDADES REALES
+                |--------------------------------------------------------------------------
+                */
+
                 $producto->increment(
                     'stock',
-                    $cantidad
+                    $cantidadUnidades
                 );
 
 
-                // ACTUALIZAR PRECIO DE COMPRA
+                /*
+                |--------------------------------------------------------------------------
+                | ACTUALIZAR PRECIO BASE DE COMPRA
+                |--------------------------------------------------------------------------
+                */
+
+                $precioCompraUnitario =
+                    $unidadesPorPresentacion > 0
+                        ? $precioCompra / $unidadesPorPresentacion
+                        : $precioCompra;
+
+
                 $producto->update([
 
                     'precio_compra' =>
-                        $precioCompra,
+                        $precioCompraUnitario,
 
                 ]);
 
@@ -216,7 +348,12 @@ class CompraController extends Controller
             }
 
 
-            // ACTUALIZAR TOTAL
+            /*
+            |--------------------------------------------------------------------------
+            | ACTUALIZAR TOTAL
+            |--------------------------------------------------------------------------
+            */
+
             $compra->update([
 
                 'total' =>
@@ -232,7 +369,9 @@ class CompraController extends Controller
                 ->route('compras.index')
                 ->with(
                     'success',
-                    'Compra registrada correctamente.'
+                    'Compra '
+                    . $compra->numero_comprobante
+                    . ' registrada correctamente.'
                 );
 
 

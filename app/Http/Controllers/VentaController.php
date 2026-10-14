@@ -8,6 +8,7 @@ use App\Models\Producto;
 use App\Models\Cliente;
 use App\Models\Caja;
 use App\Models\MovimientoCaja;
+use App\Models\PresentacionProducto;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -23,7 +24,8 @@ class VentaController extends Controller
         $ventas = Venta::with([
                 'cliente',
                 'usuario',
-                'detalles.producto'
+                'detalles.producto',
+                'detalles.presentacion',
             ])
             ->when($buscar, function ($query, $buscar) {
 
@@ -79,14 +81,22 @@ class VentaController extends Controller
             ->paginate(10)
             ->withQueryString();
 
+
         $clientes = Cliente::where('estado', true)
             ->orderBy('nombre')
             ->get();
 
-        $productos = Producto::where('estado', true)
+
+        $productos = Producto::with([
+                'presentaciones' => function ($query) {
+                    $query->where('estado', true);
+                }
+            ])
+            ->where('estado', true)
             ->where('stock', '>', 0)
             ->orderBy('nombre')
             ->get();
+
 
         return view('ventas.index', compact(
             'ventas',
@@ -99,26 +109,39 @@ class VentaController extends Controller
         ));
     }
 
+
     public function store(Request $request)
     {
         $request->validate([
-            'cliente_id' => 'nullable|exists:clientes,id',
-            'fecha' => 'required|date',
-            'metodo_pago' => 'required|string|max:50',
-            'tipo_comprobante' => 'nullable|string|max:50',
-            'numero_comprobante' => 'nullable|string|max:255',
 
-            'productos' => 'required|array|min:1',
+            'cliente_id' =>
+                'nullable|exists:clientes,id',
+
+            'fecha' =>
+                'required|date',
+
+            'metodo_pago' =>
+                'required|string|max:50',
+
+            'tipo_comprobante' =>
+                'nullable|string|max:50',
+
+            'productos' =>
+                'required|array|min:1',
 
             'productos.*.producto_id' =>
                 'required|exists:productos,id',
 
-            'productos.*.cantidad' =>
+            'productos.*.presentacion_id' =>
+                'nullable|exists:presentaciones_producto,id',
+
+            'productos.*.cantidad_presentaciones' =>
                 'required|integer|min:1',
         ]);
 
 
         DB::beginTransaction();
+
 
         try {
 
@@ -130,13 +153,22 @@ class VentaController extends Controller
 
             $caja = null;
 
+
             if ($request->metodo_pago === 'Efectivo') {
 
-                $caja = Caja::where('usuario_id', auth()->id())
-                    ->where('estado', 'ABIERTA')
+                $caja = Caja::where(
+                        'usuario_id',
+                        auth()->id()
+                    )
+                    ->where(
+                        'estado',
+                        'ABIERTA'
+                    )
                     ->first();
 
+
                 if (!$caja) {
+
                     throw new \Exception(
                         'Debes abrir una caja antes de registrar una venta en efectivo.'
                     );
@@ -146,19 +178,54 @@ class VentaController extends Controller
 
             /*
             |--------------------------------------------------------------------------
+            | GENERAR NÚMERO AUTOMÁTICO
+            |--------------------------------------------------------------------------
+            */
+
+            $ultimoId =
+                Venta::max('id') ?? 0;
+
+
+            $numeroComprobante =
+                'VEN-' . str_pad(
+                    $ultimoId + 1,
+                    6,
+                    '0',
+                    STR_PAD_LEFT
+                );
+
+
+            /*
+            |--------------------------------------------------------------------------
             | CREAR VENTA
             |--------------------------------------------------------------------------
             */
 
             $venta = Venta::create([
-                'cliente_id' => $request->cliente_id,
-                'usuario_id' => auth()->id(),
-                'fecha' => $request->fecha,
-                'metodo_pago' => $request->metodo_pago,
-                'tipo_comprobante' => $request->tipo_comprobante,
-                'numero_comprobante' => $request->numero_comprobante,
-                'total' => 0,
-                'estado' => true,
+
+                'cliente_id' =>
+                    $request->cliente_id,
+
+                'usuario_id' =>
+                    auth()->id(),
+
+                'fecha' =>
+                    $request->fecha,
+
+                'metodo_pago' =>
+                    $request->metodo_pago,
+
+                'tipo_comprobante' =>
+                    $request->tipo_comprobante,
+
+                'numero_comprobante' =>
+                    $numeroComprobante,
+
+                'total' =>
+                    0,
+
+                'estado' =>
+                    true,
             ]);
 
 
@@ -174,33 +241,107 @@ class VentaController extends Controller
             foreach ($request->productos as $item) {
 
                 $producto = Producto::lockForUpdate()
-                    ->findOrFail($item['producto_id']);
-
-                $cantidad = (int) $item['cantidad'];
+                    ->findOrFail(
+                        $item['producto_id']
+                    );
 
 
                 /*
                 |--------------------------------------------------------------------------
-                | VERIFICAR STOCK
+                | PRESENTACIÓN
                 |--------------------------------------------------------------------------
                 */
 
-                if ($producto->stock < $cantidad) {
+                $presentacion = null;
+
+                $unidadesPorPresentacion = 1;
+
+                $precioVenta =
+                    (float) $producto->precio_venta;
+
+
+                if (!empty($item['presentacion_id'])) {
+
+                    $presentacion = PresentacionProducto::where(
+                            'id',
+                            $item['presentacion_id']
+                        )
+                        ->where(
+                            'producto_id',
+                            $producto->id
+                        )
+                        ->where(
+                            'estado',
+                            true
+                        )
+                        ->firstOrFail();
+
+
+                    $unidadesPorPresentacion =
+                        (int) $presentacion->cantidad_unidades;
+
+
+                    if (
+                        $presentacion->precio_venta !== null
+                    ) {
+
+                        $precioVenta =
+                            (float) $presentacion->precio_venta;
+                    }
+                }
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | CANTIDAD DE PRESENTACIONES
+                |--------------------------------------------------------------------------
+                */
+
+                $cantidadPresentaciones =
+                    (int) $item['cantidad_presentaciones'];
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | CANTIDAD REAL DE UNIDADES
+                |--------------------------------------------------------------------------
+                */
+
+                $cantidadUnidades =
+                    $cantidadPresentaciones
+                    * $unidadesPorPresentacion;
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | VERIFICAR STOCK REAL
+                |--------------------------------------------------------------------------
+                */
+
+                if (
+                    $producto->stock <
+                    $cantidadUnidades
+                ) {
 
                     throw new \Exception(
                         'Stock insuficiente para '
                         . $producto->nombre
                         . '. Disponible: '
                         . $producto->stock
+                        . ' unidades.'
                     );
                 }
 
 
-                $precioVenta =
-                    (float) $producto->precio_venta;
+                /*
+                |--------------------------------------------------------------------------
+                | SUBTOTAL
+                |--------------------------------------------------------------------------
+                */
 
                 $subtotal =
-                    $cantidad * $precioVenta;
+                    $cantidadPresentaciones
+                    * $precioVenta;
 
 
                 /*
@@ -210,55 +351,90 @@ class VentaController extends Controller
                 */
 
                 DetalleVenta::create([
-                    'venta_id' => $venta->id,
-                    'producto_id' => $producto->id,
-                    'cantidad' => $cantidad,
-                    'precio_venta' => $precioVenta,
-                    'subtotal' => $subtotal,
+
+                    'venta_id' =>
+                        $venta->id,
+
+                    'producto_id' =>
+                        $producto->id,
+
+                    'presentacion_id' =>
+                        $presentacion?->id,
+
+                    'cantidad_presentaciones' =>
+                        $cantidadPresentaciones,
+
+                    'cantidad' =>
+                        $cantidadUnidades,
+
+                    'precio_venta' =>
+                        $precioVenta,
+
+                    'subtotal' =>
+                        $subtotal,
                 ]);
 
 
                 /*
                 |--------------------------------------------------------------------------
-                | DESCONTAR STOCK
+                | DESCONTAR STOCK REAL
                 |--------------------------------------------------------------------------
                 */
 
                 $producto->decrement(
                     'stock',
-                    $cantidad
+                    $cantidadUnidades
                 );
 
 
-                $totalVenta += $subtotal;
+                $totalVenta +=
+                    $subtotal;
             }
 
 
             /*
             |--------------------------------------------------------------------------
-            | ACTUALIZAR TOTAL DE VENTA
+            | ACTUALIZAR TOTAL
             |--------------------------------------------------------------------------
             */
 
             $venta->update([
-                'total' => $totalVenta
+
+                'total' =>
+                    $totalVenta
+
             ]);
 
 
             /*
             |--------------------------------------------------------------------------
-            | REGISTRAR INGRESO AUTOMÁTICO EN CAJA
+            | REGISTRAR INGRESO EN CAJA
             |--------------------------------------------------------------------------
             */
 
-            if ($request->metodo_pago === 'Efectivo' && $caja) {
+            if (
+                $request->metodo_pago === 'Efectivo'
+                &&
+                $caja
+            ) {
 
                 MovimientoCaja::create([
-                    'caja_id' => $caja->id,
-                    'tipo' => 'INGRESO',
-                    'concepto' => 'Venta N.º ' . $venta->id,
-                    'monto' => $totalVenta,
-                    'fecha' => now(),
+
+                    'caja_id' =>
+                        $caja->id,
+
+                    'tipo' =>
+                        'INGRESO',
+
+                    'concepto' =>
+                        'Venta '
+                        . $venta->numero_comprobante,
+
+                    'monto' =>
+                        $totalVenta,
+
+                    'fecha' =>
+                        now(),
                 ]);
             }
 
@@ -270,7 +446,9 @@ class VentaController extends Controller
                 ->route('ventas.index')
                 ->with(
                     'success',
-                    'Venta registrada correctamente.'
+                    'Venta '
+                    . $venta->numero_comprobante
+                    . ' registrada correctamente.'
                 );
 
 
@@ -278,10 +456,14 @@ class VentaController extends Controller
 
             DB::rollBack();
 
+
             return back()
                 ->withInput()
                 ->withErrors([
-                    'error' => $e->getMessage()
+
+                    'error' =>
+                        $e->getMessage()
+
                 ]);
         }
     }

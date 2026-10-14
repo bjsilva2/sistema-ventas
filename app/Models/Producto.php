@@ -13,6 +13,7 @@ class Producto extends Model
         'codigo',
         'nombre',
         'descripcion',
+        'imagen',
         'categoria_id',
         'precio_compra',
         'precio_venta',
@@ -24,5 +25,10 @@ class Producto extends Model
     public function categoria()
     {
         return $this->belongsTo(Categoria::class);
+    }
+
+    public function presentaciones()
+    {
+        return $this->hasMany(PresentacionProducto::class);
     }
 }

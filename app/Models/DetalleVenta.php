@@ -14,6 +14,8 @@ class DetalleVenta extends Model
     protected $fillable = [
         'venta_id',
         'producto_id',
+        'presentacion_id',
+        'cantidad_presentaciones',
         'cantidad',
         'precio_venta',
         'subtotal',
@@ -27,5 +29,13 @@ class DetalleVenta extends Model
     public function producto()
     {
         return $this->belongsTo(Producto::class);
+    }
+
+    public function presentacion()
+    {
+        return $this->belongsTo(
+            PresentacionProducto::class,
+            'presentacion_id'
+        );
     }
 }
